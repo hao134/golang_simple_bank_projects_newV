@@ -60,3 +60,115 @@ press "Create a new connection..."
 ![](https://i.imgur.com/O8BC87B.png)
 * it creates the tables
 ![](https://i.imgur.com/kYI1aD3.png)
+
+## How to write & run database migration in Golang
+###### tags: `golang`
+
+1. install migrate
+
+```bash=
+brew install golang-migrate
+```
+![](https://i.imgur.com/NO2vbFZ.png)
+
+2. init and create schema
+```
+migrate create -ext sql -dir db/migration -seq init_schema
+```
+
+![](https://i.imgur.com/oAILhiQ.png)
+* The up-script is run to make a forward change to the schema
+* The down-script is run if we want to revert the change by the up-script
+
+
+3. put the sql code into 
+* up schema
+
+```
+CREATE TABLE "accounts" (
+  "id" bigserial PRIMARY KEY,
+  "owner" varchar NOT NULL,
+  "balance" bigint NOT NULL,
+  "currency" varchar NOT NULL,
+  "created_at" timestamptz NOT NULL DEFAULT (now())
+);
+
+CREATE TABLE "entries" (
+  "id" bigserial PRIMARY KEY,
+  "account_id" bigint NOT NULL,
+  "amount" bigint NOT NULL,
+  "created_at" timestamptz NOT NULL DEFAULT (now())
+);
+
+CREATE TABLE "transfers" (
+  "id" bigserial PRIMARY KEY,
+  "from_account_id" bigint NOT NULL,
+  "to_account_id" bigint NOT NULL,
+  "amount" bigint NOT NULL,
+  "created_at" timestamptz NOT NULL DEFAULT (now())
+);
+
+ALTER TABLE "entries" ADD FOREIGN KEY ("account_id") REFERENCES "accounts" ("id");
+
+ALTER TABLE "transfers" ADD FOREIGN KEY ("from_account_id") REFERENCES "accounts" ("id");
+
+ALTER TABLE "transfers" ADD FOREIGN KEY ("to_account_id") REFERENCES "accounts" ("id");
+
+CREATE INDEX ON "accounts" ("owner");
+
+CREATE INDEX ON "entries" ("account_id");
+
+CREATE INDEX ON "transfers" ("from_account_id");
+
+CREATE INDEX ON "transfers" ("to_account_id");
+
+CREATE INDEX ON "transfers" ("from_account_id", "to_account_id");
+
+COMMENT ON COLUMN "entries"."amount" IS 'can be negative or positive';
+
+COMMENT ON COLUMN "transfers"."amount" IS 'must be positive';
+```
+
+* down schema:
+```sql=
+DROP TABLE IF EXISTS entries;
+DROP TABLE IF EXISTS transfers;
+DROP TABLE IF EXISTS accounts;
+```
+
+4. make migrate
+**confirm the docker is running**
+![](https://i.imgur.com/jxZfvkz.png)
+
+* in Makefile 
+```
+postgres:
+	docker run --name postgres15 -p 5432:5432 -e POSTGRES_USER=root -e POSTGRES_PASSWORD=secret -d postgres:15-alpine
+
+createdb:
+	docker exec -it postgres15 createdb --username=root --owner=root simple_bank
+
+dropdb:
+	docker exec -it postgres15 dropdb simple_bank
+    
+migrateup:
+	migrate -path db/migration -database "postgresql://root:secret@localhost:5432/simple_bank?sslmode=disable" -verbose up
+
+migratedown:
+	migrate -path db/migration -database "postgresql://root:secret@localhost:5432/simple_bank?sslmode=disable" -verbose down
+
+.PHONY: postgres createdb dorpdb migrateup migratedown
+```
+打上
+```
+make createdb
+```
+就可以創資料庫
+![](https://i.imgur.com/J9O4v17.png)
+stop and remove the container
+![](https://i.imgur.com/EM93Gra.png)
+
+type: make postgres 就可以再次創立container
+
+* use make migrateup/make migratedown to create/delete the tables in database simple_bank
+![](https://i.imgur.com/NcbkHMP.png)
