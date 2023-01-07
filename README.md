@@ -172,3 +172,47 @@ type: make postgres 就可以再次創立container
 
 * use make migrateup/make migratedown to create/delete the tables in database simple_bank
 ![](https://i.imgur.com/NcbkHMP.png)
+
+## Generate CRUD Golang code from SQL | Compare db/sql, gorm, sqlx & sqlc
+###### tags: `golang`
+
+### What is CRUD
+![](https://i.imgur.com/UAVStpZ.jpg)
+
+### Usage
+![](https://i.imgur.com/WPtltEP.jpg)
+
+1. use sqlc:
+* install sqlc
+```
+brew install sqlc
+```
+![](https://i.imgur.com/tHO2W2K.png)
+
+
+* run "sqlc init" at project file
+![](https://i.imgur.com/mIKfKGn.png)
+* create sqlc, query folders in db folder and write below in the sqlc.yaml
+```
+version: "1"
+packages:
+  - name: "db"
+    path: "./db/sqlc"
+    queries: "./db/query/"
+    schema: "./db/migration/"
+    engine: "postgresql"
+    emit_json_tags: true
+    emit_prepared_queries: false
+    emit_interface: false
+    emit_exact_table_names: false
+```
+* Add "sqlc: sqlc generate" in makefile
+* After create account.sql in query folder and run "make sqlc", you will see the generated files in the sqlc folder:
+![](https://i.imgur.com/gaeYzRJ.png)
+
+
+2. init go
+```
+go mod init simple_bank
+go mod tidy
+```
