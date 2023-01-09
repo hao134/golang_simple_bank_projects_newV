@@ -216,3 +216,55 @@ packages:
 go mod init simple_bank
 go mod tidy
 ```
+
+## Write unit tests for database CRUD with random data in Golang
+
+* install golang lib pq
+```
+go get github.com/lib/pq
+```
+at main_test.go, add this line in import:
+```
+_ "github.com/lib/pq"
+```
+
+* install testify
+
+```
+go get github.com/stretchr/testify
+```
+
+1. create main_test.go
+```
+package db
+
+import (
+	"database/sql"
+	"log"
+	"os"
+	"testing"
+
+	_ "github.com/lib/pq"
+)
+
+const (
+	dbDriver = "postgres"
+	dbSource = "postgresql://root:secret@localhost:5432/simple_bank?sslmode=disable"
+)
+
+var testQueries *Queries
+
+func TestMain(m *testing.M) {
+	conn, err := sql.Open(dbDriver, dbSource)
+	if err != nil {
+		log.Fatal("cannot connect to db", err)
+	}
+
+	// New defined in the db.go
+	testQueries = New(conn)
+	os.Exit(m.Run())
+}
+```
+
+2. test account.go -> account_test.go
+3. create util folder -> util/random.go
