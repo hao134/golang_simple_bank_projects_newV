@@ -269,3 +269,28 @@ func TestMain(m *testing.M) {
 2. test account.go -> account_test.go
 3. create util folder -> util/random.go
 
+## A clean way to implement database transaction in Golang
+
+### What is a db transaction?
+![](https://i.imgur.com/xjYOQ6q.png)
+#### example
+![](https://i.imgur.com/uxiBINU.jpg)
+
+### Why do we need db transaction
+![](https://i.imgur.com/svJrPoF.png)
+
+### ACID PROPERTY
+![](https://i.imgur.com/wVtaldt.png)
+
+
+
+### 創立store.go和store_test.go來處理上面example的操作
+
+#### 因為在store_test.go有用到Goroutine 與 Channel，這個連結是介紹：
+https://peterhpchen.github.io/2020/03/08/goroutine-and-channel.html
+
+### 可以看到transfer db中從114帳戶轉到115帳戶的同時，114帳戶在entries中 -10, 而115帳戶在entries中 +10
+* transfer
+![](https://i.imgur.com/tyYL96A.png)
+* entries
+![](https://i.imgur.com/64k9NEK.png)
