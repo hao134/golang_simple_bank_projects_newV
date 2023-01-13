@@ -294,3 +294,132 @@ https://peterhpchen.github.io/2020/03/08/goroutine-and-channel.html
 ![](https://i.imgur.com/tyYL96A.png)
 * entries
 ![](https://i.imgur.com/64k9NEK.png)
+
+## DB transaction lock & How to handle deadlock in Golang
+* Test driven development (or TDD):
+We write tests first to make our current code breaks, then we gradually improve the code until the tests pass.
+
+1. at store_test.go, 加上
+```go
+// check accounts
+		fromAccount := result.FromAccount
+		require.NotEmpty(t, fromAccount)
+		require.Equal(t, account1.ID, fromAccount.ID)
+
+		toAccount := result.ToAccount
+		require.NotEmpty(t, toAccount)
+		require.Equal(t, account2.ID, toAccount.ID)
+
+		// check accounts' balance
+		fmt.Println(">> tx:", fromAccount.Balance, toAccount.Balance)
+		diff1 := account1.Balance - fromAccount.Balance
+		diff2 := toAccount.Balance - account2.Balance
+		require.Equal(t, diff1, diff2)
+		require.True(t, diff1 > 0)
+		require.True(t, diff1%amount == 0) // 1 * amount, 2 * amount, 3* amount, n* amount
+
+		k := int(diff1 / amount)
+		require.True(t, k >= 1 && k <= n)
+		require.NotContains(t, existed, k)
+		existed[k] = true
+
+	}
+
+	// check the final updated balances
+	updatedAccount1, err := testQueries.GetAccount(context.Background(), account1.ID)
+	require.NoError(t, err)
+
+	updatedAccount2, err := testQueries.GetAccount(context.Background(), account2.ID)
+	require.NoError(t, err)
+
+	fmt.Println(">> after:", updatedAccount1.Balance, updatedAccount2.Balance)
+	require.Equal(t, account1.Balance-int64(n)*amount, updatedAccount1.Balance)
+	require.Equal(t, account2.Balance+int64(n)*amount, updatedAccount2.Balance)
+}
+
+```
+會發現require.NotEmpty(t, fromAccount)，會出錯，因為我們還沒有在store.go上面實現balance
+
+2. 在store.go中實現balance功能：
+```go=
+account1, err := q.GetAccount(ctx, arg.FromAccountID)
+if err != nil {
+	return err
+}
+
+result.FromAccount, err = q.UpdateAccount(ctx, UpdateAccountParams{
+	ID:      arg.FromAccountID,
+	Balance: account1.Balance - arg.Amount,
+})
+if err != nil {
+	return err
+}
+
+account2, err := q.GetAccount(ctx, arg.ToAccountID)
+if err != nil {
+	return err
+}
+
+result.ToAccount, err = q.UpdateAccount(ctx, UpdateAccountParams{
+	ID:      arg.ToAccountID,
+	Balance: account2.Balance + arg.Amount,
+})
+if err != nil {
+	return err
+}
+```
+但測試是失敗的，兩者的tx會不一樣：
+
+![](https://i.imgur.com/FCTxCel.png)
+出錯的點在第94行
+![](https://i.imgur.com/m7pc8A9.png)
+原因在於account.sql中
+```sql
+-- name: GetAccount :one
+SELECT * FROM accounts
+WHERE id = $1 LIMIT 1;
+```
+這個select並沒有在一個迴圈執行後block起來被人禁用直到下個迴圈，因此兩個concurrent transactions可能得到一樣的值，這證明了為什麼上個迴圈得到146，這個迴圈給出136，而下個迴圈一樣是136
+
+修正方法為，在account.sql, 加上，並make sqlc
+```sql
+-- name: GetAccountForUpdate :one
+SELECT * FROM accounts
+WHERE id = $1 LIMIT 1
+FOR UPDATE;
+
+```
+並在store.go中修改q.GetAccount 為 q.GetAccountForUpdate
+```go 
+account1, err := q.GetAccount(ctx, arg.FromAccountID)
+if err != nil {
+	return err
+}
+
+result.FromAccount, err = q.UpdateAccount(ctx, UpdateAccountParams{
+	ID:      arg.FromAccountID,
+	Balance: account1.Balance - arg.Amount,
+})
+if err != nil {
+	return err
+}
+
+account2, err := q.GetAccount(ctx, arg.ToAccountID)
+if err != nil {
+	return err
+}
+```
+但依然得到錯誤，此次錯誤為deadlock：
+![](https://i.imgur.com/O71ivng.png)
+加上一些標籤後，可以看到deadlock的時機
+![](https://i.imgur.com/YCiuFjN.png)
+
+在經過ㄧ些測試後，我們發現deadlock的發生與foreign key有關(影片中有說明)，所以在account.sql中，我們更新NO KEY keyword 在GetAccountForUpdate 中，確保更新過程不會碰到key，並再次make sqlc：
+```sql 
+-- name: GetAccountForUpdate :one
+SELECT * FROM accounts
+WHERE id = $1 LIMIT 1
+FOR NO KEY UPDATE;
+```
+這樣處理後就解決問題了
+![](https://i.imgur.com/eByjxJR.png)
