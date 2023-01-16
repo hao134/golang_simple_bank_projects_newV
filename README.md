@@ -423,3 +423,135 @@ FOR NO KEY UPDATE;
 ```
 這樣處理後就解決問題了
 ![](https://i.imgur.com/eByjxJR.png)
+
+## How to avoid deadlock in DB transaction? Queries order matters!
+* see deadlock example
+
+type this on terminal
+```
+docker exec -it postgres15 psql -U root -d simple_bank
+```
+在兩個終端視窗執行這些指令：
+![](https://i.imgur.com/rKu14l3.png)
+![](https://i.imgur.com/fxDGtPV.png)
+
+1. 對第一個視窗進行第一個指令的update:
+```sql
+UPDATE accounts SET balance = balance - 10 WHERE id = 1 RETURNING *;
+```
+馬上跑出結果：
+![](https://i.imgur.com/RXZRdCm.png)
+
+2. 同樣的對第二個視窗進行第一個指令：
+
+```sql 
+UPDATE accounts SET balance = balance - 10 WHERE id = 2 RETURNING *
+```
+![](https://i.imgur.com/8dX1ThD.png)
+
+3. 此時對第一個視窗進行第二個指令的update會發現發生block
+```sql 
+UPDATE accounts SET balance = balance + 10 WHERE id = 2 RETURNING *;
+```
+![](https://i.imgur.com/pdY0ilm.png)
+
+4. 此時若是對第二個視窗進行第二個指令更新，會得到deadlock
+![](https://i.imgur.com/k77mp1e.png)
+
+
+* 把上面的過程寫在test中就會發生deadlock
+```go
+func TestTransferTxDeadlock(t *testing.T) {
+	store := NewStore(testDB)
+
+	account1 := createRandomAccount(t)
+	account2 := createRandomAccount(t)
+	fmt.Println(">> before:", account1.Balance, account2.Balance)
+
+	// run a concurrent transfer transactions
+	n := 10
+	amount := int64(10)
+	errs := make(chan error)
+
+	for i := 0; i < n; i++ {
+		fromAccountID := account1.ID
+		toAccountID := account2.ID
+
+		if i%2 == 1 {
+			fromAccountID = account2.ID
+			toAccountID = account1.ID
+		}
+		go func() {
+			ctx := context.Background()
+			_, err := store.TransferTx(ctx, TransferTxParams{
+				FromAccountID: fromAccountID,
+				ToAccountID:   toAccountID,
+				Amount:        amount,
+			})
+
+			errs <- err
+		}()
+	}
+
+	// check results
+	for i := 0; i < n; i++ {
+		err := <-errs
+		require.NoError(t, err)
+	}
+
+	// check the final updated balances
+	updatedAccount1, err := testQueries.GetAccount(context.Background(), account1.ID)
+	require.NoError(t, err)
+
+	updatedAccount2, err := testQueries.GetAccount(context.Background(), account2.ID)
+	require.NoError(t, err)
+
+	fmt.Println(">> after:", updatedAccount1.Balance, updatedAccount2.Balance)
+	require.Equal(t, account1.Balance, updatedAccount1.Balance)
+	require.Equal(t, account2.Balance, updatedAccount2.Balance)
+}
+```
+run test 後不意外的會發生deadlock:
+![](https://i.imgur.com/yVfJ6uG.png)
+
+* 如何避免？
+把次序替換，確保id=1的操作都優先於id=2的操作
+the best defense against deadlocks is to avoid them by making sure that our application always acquire locks in a consistent order.
+![](https://i.imgur.com/WAEOvIf.png)
+
+例如，在store.go中將這段程式碼改成如此，確保update的次序id都是由小而大的(consistent order)：
+```go 
+if arg.FromAccountID < arg.ToAccountID {
+	result.FromAccount, err = q.AddAccountBalance(ctx, AddAccountBalanceParams{
+		ID:     arg.FromAccountID,
+		Amount: -arg.Amount,
+	})
+	if err != nil {
+		return err
+	}
+
+	result.ToAccount, err = q.AddAccountBalance(ctx, AddAccountBalanceParams{
+		ID:     arg.ToAccountID,
+		Amount: arg.Amount,
+	})
+	if err != nil {
+		return err
+	}
+} else {
+	result.ToAccount, err = q.AddAccountBalance(ctx, AddAccountBalanceParams{
+		ID:     arg.ToAccountID,
+		Amount: arg.Amount,
+	})
+	if err != nil {
+		return err
+	}
+
+	result.FromAccount, err = q.AddAccountBalance(ctx, AddAccountBalanceParams{
+		ID:     arg.FromAccountID,
+		Amount: -arg.Amount,
+	})
+	if err != nil {
+		return err
+	}
+}
+```
