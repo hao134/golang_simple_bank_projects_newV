@@ -555,3 +555,71 @@ if arg.FromAccountID < arg.ToAccountID {
 	}
 }
 ```
+## Understand isolation levels & read phenomena in MySQL & PostgreSQL via examples
+
+### Read Phenomena
+
+- DIRTY READ
+  A transaction **reads** data written by other concurrent **uncommitted** transaction
+- NON-REPEATABLE READ
+  A transaction **reads** the **same row twice** and sees different value because it has been **modified** by other **committed** transaction
+- PHANTOM READ
+  A transaction **re-executes** a query to **find rows** that satisfy a condition and sees a **different set** of rows, due to changes by other **committed** transaction
+- SERIALIZATION ANOMALY
+  The result of a **group** of concurrent **committed transactions** is **impossible to achieve** if we try to run them **sequentially** in any order without overlapping.
+
+### 4 Standard Isolation Levels(American National Standards Institure-ANSI)
+
+- Low Level
+
+1. READ UNCOMMITTED: Can see data written by uncommitted transaction
+2. READ COMMITTED: Only see data written by committed transaction
+3. REPEATABLE READ: Same read query always reutrns same result.
+4. SERIALIZABLE: Can achieve same result if execute transactions serially in some order instead of concurrently.
+
+### See 4 isolation Levels in MySQL & postgreSQL
+
+- MySQL
+
+1. READ UNCOMMITTED: 當左邊尚未commit, 右邊就能讀取，會有dirty read 的問題
+   ![](https://i.imgur.com/Cl5G5Wc.jpg)
+2. READ COMMITTED: 此時左邊更新了，但右邊仍得到相同的結果(90)，代表read committed 可以預防 dirty read
+   ![](https://i.imgur.com/XzywHf0.jpg)
+3. REPEATABLE READ: 同樣的query得到的結果都相同，能預防phantom read（即相同的query，得到不同的結果)，看右邊底下，會有 serializable anomaly 的問題 (即一次-10的update卻顯示-20 (80 -> 60))
+   ![](https://i.imgur.com/uILFuyH.jpg)
+4. SERIALIZABLE
+   MySQL 是靠鎖住來預防 serializable anomaly 的，因此右邊要 commit;左邊才會執行 update
+   ![](https://i.imgur.com/EjaF8RE.jpg)
+
+- postgreSQL
+  因為 postgre 預設 read uncommitted 和 read committed 是一樣的，因此只有三個 isolation level.
+
+1. READ UNCOMMITTED & READ COMMITTED:
+   當左邊已經更新了，但右邊並不曉得，因此，會導致右邊相同的查詢有不同的值出現的情況，這就是 PHANTOM READ
+   ![](https://i.imgur.com/OgZO7BE.jpg)
+2. REPEATABLE READ
+   同樣的情況，在 REAPEATABLE READ 中會提醒錯誤發生(could not serialize access due to concurrent update)
+   ![](https://i.imgur.com/1Yseacc.jpg)
+   這是在 REAPEATABLE READ 下發生的 SERIALIZATION ANOMALY(看右下角)
+   ![](https://i.imgur.com/zEvZHQ1.jpg)
+
+3. SERIALIZABLE
+   右下角提醒了(CHECK)(HINT: The transaction might succeed if retried.)來避免 SERIALIZATION ANOMALY
+   ![](https://i.imgur.com/aLkG26B.jpg)
+
+### Isolation level in MySQL:
+![](https://i.imgur.com/mkHuLzm.jpg)
+
+### Isolation level in PostgreSQL:
+![](https://i.imgur.com/4l3bcev.jpg)
+
+### Summary
+level 4 可以避免 全部
+level 3 可以避免 SERIALIZATION ANOMALY 以外的問題
+...
+
+mysql default mode is REPEATABLE COMMITTED
+postgreSql mode is READ COMMITTED
+
+mysql 利用 Loking mechanism
+postgresql 利用 dependencies detection
