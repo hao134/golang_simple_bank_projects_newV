@@ -5,7 +5,7 @@
 :::info
 docker pull < image>:<tag>
 :::
-```bash=
+```
 docker pull postgres:15-alpine
 ```
 ![](https://i.imgur.com/4aVLMFv.png)
@@ -66,7 +66,7 @@ press "Create a new connection..."
 
 1. install migrate
 
-```bash=
+```
 brew install golang-migrate
 ```
 ![](https://i.imgur.com/NO2vbFZ.png)
@@ -84,7 +84,7 @@ migrate create -ext sql -dir db/migration -seq init_schema
 3. put the sql code into 
 * up schema
 
-```
+```sql
 CREATE TABLE "accounts" (
   "id" bigserial PRIMARY KEY,
   "owner" varchar NOT NULL,
@@ -130,7 +130,7 @@ COMMENT ON COLUMN "transfers"."amount" IS 'must be positive';
 ```
 
 * down schema:
-```sql=
+```sql
 DROP TABLE IF EXISTS entries;
 DROP TABLE IF EXISTS transfers;
 DROP TABLE IF EXISTS accounts;
@@ -193,7 +193,7 @@ brew install sqlc
 * run "sqlc init" at project file
 ![](https://i.imgur.com/mIKfKGn.png)
 * create sqlc, query folders in db folder and write below in the sqlc.yaml
-```
+```yaml
 version: "1"
 packages:
   - name: "db"
@@ -235,7 +235,7 @@ go get github.com/stretchr/testify
 ```
 
 1. create main_test.go
-```
+```go
 package db
 
 import (
@@ -341,7 +341,7 @@ We write tests first to make our current code breaks, then we gradually improve 
 會發現require.NotEmpty(t, fromAccount)，會出錯，因為我們還沒有在store.go上面實現balance
 
 2. 在store.go中實現balance功能：
-```go=
+```go
 account1, err := q.GetAccount(ctx, arg.FromAccountID)
 if err != nil {
 	return err
@@ -623,3 +623,105 @@ postgreSql mode is READ COMMITTED
 
 mysql 利用 Loking mechanism
 postgresql 利用 dependencies detection
+
+
+## Simple-bank - Setup Github Actions for Golang + Postgres to run automated tests
+
+### Workflow
+![](https://i.imgur.com/t9GqWsC.jpg)
+
+### Runner
+![](https://i.imgur.com/Z0WTbdK.jpg)
+
+
+### Job
+![](https://i.imgur.com/TG5FT5L.jpg)
+
+### step & action
+![](https://i.imgur.com/31ayQLm.jpg)
+
+### Summary
+![](https://i.imgur.com/tm3ix8W.jpg)
+
+
+1. write cml.yml
+
+這是github提供的golang模板
+```yaml
+name: ci-test
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+
+    - name: Set up Go 1.x
+      uses: actions/setup-go@v2
+      with:
+        go-version: ^1.19
+      id: go
+
+    - name: Check out code into the Go module directory
+      uses: actions/checkout@v2
+```
+加上 make test:
+```yaml
+- name: Test
+  run: make test
+```
+
+直接提交後，因為沒有連接資料庫發現這個錯誤
+![](https://i.imgur.com/YO8P88E.png)
+
+2. 因此在google搜尋：github action postgres，並點開第一個連結：https://docs.github.com/en/actions/using-containerized-services/creating-postgresql-service-containers
+
+並在 ci.yml 加上：
+```yaml
+# Service containers to run with `container-job`
+services:
+  # Label used to access the service container
+  postgres:
+    # Docker Hub image
+    image: postgres:15
+    # Provide the password for postgres
+    env:
+      POSTGRES_USER: root
+      POSTGRES_PASSWORD: secret
+      POSTGRES_DB: simple_bank
+    ports:
+      # Map tcp port 5432 on service container to the host
+      - 5432:5432
+    # Set health checks to wait until postgres has started
+    options: >-
+      --health-cmd pg_isready
+      --health-interval 10s
+      --health-timeout 5s
+      --health-retries 5
+```
+還有run migrate:
+```yaml
+- name: Run migrations
+  run: make migrateup
+```
+
+直接提交後，因為還沒有安裝migration，因此會報錯
+![](https://i.imgur.com/qSVzJol.png)
+
+3. 安裝 golang-migrate
+```yaml
+- name: Install golang-migrate
+  run: |
+    curl -L https://github.com/golang-migrate/migrate/releases/download/v4.14.1/migrate.linux-amd64.tar.gz | tar xvz
+    sudo mv migrate.linux-amd64 /usr/bin/migrate
+    which migrate
+```
+因為移動東西到/usr/bin要有權限，因此加上sudo
+預知詳細的邏輯演進可以去看 github commit 順序
