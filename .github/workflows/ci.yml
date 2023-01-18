@@ -2,9 +2,10 @@ name: ci-test
 
 on:
   push:
-    branches: [ main ]
+    # change to main to run 
+    branches: [ master ]
   pull_request:
-    branches: [ main ]
+    branches: [ master ]
 
 jobs:
 

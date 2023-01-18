@@ -724,4 +724,4 @@ services:
     which migrate
 ```
 因為移動東西到/usr/bin要有權限，因此加上sudo
-預知詳細的邏輯演進可以去看 github commit 順序
+* 欲知詳細的邏輯演進可以去看 github commit 順序
