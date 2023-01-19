@@ -725,3 +725,134 @@ services:
 ```
 因為移動東西到/usr/bin要有權限，因此加上sudo
 * 欲知詳細的邏輯演進可以去看 github commit 順序
+
+## Implement RESTful HTTP API in Go using Gin
+
+1. install golang-gin
+```bash
+go get -u github.com/gin-gonic/gin
+```
+
+2. create new folder called api, and file server.go, account.go in this folder
+
+* server.go 裡定義了各種api endpoints
+```go
+package api
+
+import (
+	db "simple_bank/db/sqlc"
+
+	"github.com/gin-gonic/gin"
+)
+
+// Server serves HTTP requests for our banking service
+type Server struct {
+	store  *db.Store
+	router *gin.Engine
+}
+
+// NewServer creates a new HTTP server and setup routing.
+func NewServer(store *db.Store) *Server {
+	server := &Server{store: store}
+	router := gin.Default()
+
+	//add routes to router
+	router.POST("/accounts", server.createAccount)
+
+	server.router = router
+	return server
+}
+
+// start runs the HTTP server on a specific address.
+func (server *Server) Start(address string) error {
+	return server.router.Run(address)
+}
+
+func errorResponse(err error) gin.H {
+	return gin.H{"error": err.Error()}
+}
+
+```
+
+* account.go，裡定義了各種func，如(createAccount...)
+```go
+package api
+
+import (
+	"net/http"
+	db "simple_bank/db/sqlc"
+
+	"github.com/gin-gonic/gin"
+)
+
+type CreateAccountRequest struct {
+	Owner    string `json:"owner" binding:"required"`
+	Currency string `json:"currency" binding:"required,oneof=USD EUR"`
+}
+
+func (server *Server) createAccount(ctx *gin.Context) {
+	var req CreateAccountRequest
+	if err := ctx.ShouldBindJSON(&req); err != nil {
+		ctx.JSON(http.StatusBadRequest, errorResponse(err))
+		return
+	}
+
+	arg := db.CreateAccountParams{
+		Owner:    req.Owner,
+		Currency: req.Currency,
+		Balance:  0,
+	}
+
+	account, err := server.store.CreateAccount(ctx, arg)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, errorResponse(err)) // code 500 internal server error
+		return
+	}
+
+	ctx.JSON(http.StatusOK, account)
+}
+```
+
+3. 最後在主folder裡創立main.go
+
+* main.go 主要是負責和各端點（資料庫，server）作連接
+```go
+package main
+
+import (
+	"database/sql"
+	"log"
+	"simple_bank/api"
+	db "simple_bank/db/sqlc"
+
+	_ "github.com/lib/pq"
+)
+
+const (
+	dbDriver      = "postgres"
+	dbSource      = "postgresql://root:secret@localhost:5432/simple_bank?sslmode=disable"
+	serverAddress = "0.0.0.0:8080"
+)
+
+func main() {
+	conn, err := sql.Open(dbDriver, dbSource)
+	if err != nil {
+		log.Fatal("cannot connect to db", err)
+	}
+	store := db.NewStore(conn)
+	server := api.NewServer(store)
+
+	err = server.Start(serverAddress)
+	if err != nil {
+		log.Fatal("cannot start server:", err)
+	}
+}
+```
+
+4. 在terminal 打上 make server(see Makefile)就能run
+![](https://i.imgur.com/FKcRl3t.png)
+
+* 在postman上運作的結果：
+![](https://i.imgur.com/pbDsTS6.png)
+
+* 要看如何實行更多的endpoints，我有紀錄在postman，或者看影片
