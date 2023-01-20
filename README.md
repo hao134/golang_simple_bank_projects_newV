@@ -856,3 +856,28 @@ func main() {
 ![](https://i.imgur.com/pbDsTS6.png)
 
 * 要看如何實行更多的endpoints，我有紀錄在postman，或者看影片
+
+## Load config from file & environment variables in Golang with Viper
+
+### WHY FILE ?
+* **DEVELOPMENT**
+Easily specify default configuration for local development and testing
+
+### WHY ENV VARS?
+* **DEVELOPMENT**
+Easily override the default configurations deploy with docker containers
+
+### WHY VIPHY VIPER?
+![](https://i.imgur.com/fReiSvg.jpg)
+
+1. install golang viper
+```
+go get github.com/spf13/viper
+```
+
+2. create app.env to store the variable:
+like
+```
+DB_DRIVER="postgres"
+DB_SOURCE="postgresql://root:secret@localhost:5432/simple_bank?sslmode=disable"
+SERVER_ADDRESS="0.0.0.0:8080"
