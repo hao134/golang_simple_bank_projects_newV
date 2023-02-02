@@ -881,3 +881,99 @@ like
 DB_DRIVER="postgres"
 DB_SOURCE="postgresql://root:secret@localhost:5432/simple_bank?sslmode=disable"
 SERVER_ADDRESS="0.0.0.0:8080"
+```
+
+## Mock DB for testing HTTP API in Go and achieve 100% coverage
+
+### Why mock database?
+* INDEPENDENT TESTS : isolate tests data to avoid conflicts
+* FASTER TESTS : Reduce a lot of time talking to the database
+* 100% COVERAGE : Easily setup edge cases: unexpected errors
+
+### Is it good enough to test our API with a mock DB?
+* Yes Our real DB Store is already tested -> mock db & real db should implement the same interface
+
+### How to mock?
+
+* Use Fake DB : MEMORY: implement a fake version of DB store data in memory
+
+![](https://i.imgur.com/GgBLAw2.png)
+
+* USE DB STUBS: GOMOCK: Generate and build stubs that returns hard-coded values
+
+![](https://i.imgur.com/vdiFo9c.png)
+
+1. install gomock:
+```
+go install github.com/golang/mock/mockgen@v1.6.0
+```
+at ~/.zshrc or ~/.bash_profile, add:
+```
+export PATH=$PATH:~/go/bin
+```
+and 
+![](https://i.imgur.com/Agqpzze.png)
+
+2. change "emit_interface: true" in sqlc.yaml and "make sqlc", we can see a file "querier.go" created
+
+at store.go
+```go
+type Store interface {
+	Querier
+	TransferTx(ctx context.Context, arg TransferTxParams) (TransferTxResult, error)
+}
+```
+change Store struct to SQLStore and change any place using this struct
+
+3. use mockgen
+```
+mockgen -destination db/mock/store.go simple_bank/db/sqlc Store
+# generate the file in the db/mock/store.go
+# simple_bank is module name
+# use Store interface, and it's placa at "db/sqlc"
+```
+
+in the mock/store.go
+```go
+// MockStore is a mock of Store interface.
+type MockStore struct {
+	ctrl     *gomock.Controller
+	recorder *MockStoreMockRecorder
+}
+
+// MockStoreMockRecorder is the mock recorder for MockStore.
+type MockStoreMockRecorder struct {
+	mock *MockStore
+}
+```
+* MockStore is the struct that implements all required functions of the Store interface, same as mockrecorder, but different arguments they need.
+
+ex:
+```go
+// AddAccountBalance mocks base method.
+func (m *MockStore) AddAccountBalance(arg0 context.Context, arg1 db.AddAccountBalanceParams) (db.Account, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "AddAccountBalance", arg0, arg1)
+	ret0, _ := ret[0].(db.Account)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// AddAccountBalance indicates an expected call of AddAccountBalance.
+func (mr *MockStoreMockRecorder) AddAccountBalance(arg0, arg1 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AddAccountBalance", reflect.TypeOf((*MockStore)(nil).AddAccountBalance), arg0, arg1)
+}
+```
+
+4. change package name, "mock_sqlc" doesn't make sense
+
+![](https://i.imgur.com/VGnIkQr.png)
+
+change it to "mockdb"
+```
+mockgen -package mockgen -destination db/mock/store.go simple_bank/db/sqlc Store
+```
+![](https://i.imgur.com/oqMWSHs.png)
+
+5. create account_test.go in api folder. See the codes in this program to see how it works.
